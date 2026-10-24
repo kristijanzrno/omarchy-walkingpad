@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.kristijanzrno.walkingpad",
+  "name": "WalkingPad",
+  "version": "0.1.0",
+  "author": "kristijanzrno",
+  "license": "MIT",
+  "description": "Control a KingSmith WalkingPad (R1 Pro, A1, C1…) over Bluetooth from the Omarchy bar: start, stop, speed, mode, and daily step totals. Tested on the R1 Pro.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "WalkingPad",
+    "description": "Start and stop your WalkingPad, change speed and mode, and see session and daily totals.",
+    "category": "Fitness",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barLabel": "speed",
+      "maxSpeed": "6.0",
+      "speedStep": "0.5",
+      "startSpeed": "2.0",
+      "autoConnect": "on"
+    },
+    "schema": [
+      {
+        "key": "barLabel",
+        "type": "enum",
+        "label": "Bar label while walking",
+        "options": [
+          {
+            "value": "speed",
+            "label": "Speed"
+          },
+          {
+            "value": "steps",
+            "label": "Session steps"
+          },
+          {
+            "value": "today",
+            "label": "Today's steps"
+          },
+          {
+            "value": "icon",
+            "label": "Icon only"
+          }
+        ],
+        "defaultValue": "speed"
+      },
+      {
+        "key": "maxSpeed",
+        "type": "enum",
+        "label": "Maximum speed (km/h)",
+        "description": "The R1 Pro walks up to 6 km/h; with the handrail raised it runs up to 10 km/h.",
+        "options": [
+          {
+            "value": "6.0",
+            "label": "6"
+          },
+          {
+            "value": "8.0",
+            "label": "8"
+          },
+          {
+            "value": "10.0",
+            "label": "10"
+          }
+        ],
+        "defaultValue": "6.0"
+      },
+      {
+        "key": "speedStep",
+        "type": "enum",
+        "label": "Speed step (km/h)",
+        "options": [
+          {
+            "value": "0.1",
+            "label": "0.1"
+          },
+          {
+            "value": "0.2",
+            "label": "0.2"
+          },
+          {
+            "value": "0.5",
+            "label": "0.5"
+          },
+          {
+            "value": "1.0",
+            "label": "1.0"
+          }
+        ],
+        "defaultValue": "0.5"
+      },
+      {
+        "key": "startSpeed",
+        "type": "enum",
+        "label": "Speed after starting (km/h)",
+        "description": "Applied once the belt's start countdown finishes. Keep pad = use whatever the pad starts at.",
+        "options": [
+          {
+            "value": "keep",
+            "label": "Keep pad"
+          },
+          {
+            "value": "1.0",
+            "label": "1.0"
+          },
+          {
+            "value": "2.0",
+            "label": "2.0"
+          },
+          {
+            "value": "3.0",
+            "label": "3.0"
+          },
+          {
+            "value": "4.0",
+            "label": "4.0"
+          }
+        ],
+        "defaultValue": "2.0"
+      },
+      {
+        "key": "autoConnect",
+        "type": "enum",
+        "label": "Connect automatically",
+        "description": "While connected, the KS Fit phone app can't reach the pad. Turn off to connect only from the panel.",
+        "options": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "defaultValue": "on"
+      }
+    ]
+  }
+}
