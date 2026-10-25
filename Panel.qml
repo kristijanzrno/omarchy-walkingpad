@@ -383,11 +383,14 @@ Panel {
       anchors.fill: parent
       spacing: Style.space(6)
 
+      // Model is the day count, not the array: the bridge sends a fresh array
+      // every second while walking, and binding to it would rebuild every
+      // delegate (and drop an open tooltip) on each update.
       Repeater {
-        model: pad.week
+        model: pad.week.length
         Item {
-          required property var modelData
           required property int index
+          readonly property var modelData: pad.week[index] || ({ date: "", steps: 0, distance: 0 })
           readonly property bool isToday: index === pad.week.length - 1
           width: (chart.width - Style.space(6) * (pad.week.length - 1)) / Math.max(1, pad.week.length)
           height: chart.height
@@ -407,7 +410,7 @@ Panel {
             id: dayLabel
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
-            text: ["S", "M", "T", "W", "T", "F", "S"][new Date(modelData.date + "T12:00:00").getDay()]
+            text: modelData.date === "" ? "" : ["S", "M", "T", "W", "T", "F", "S"][new Date(modelData.date + "T12:00:00").getDay()]
             color: isToday ? root.foreground : root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
