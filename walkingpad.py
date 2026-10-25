@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 """Bluetooth bridge between the Omarchy shell and a KingSmith WalkingPad.
 
-Talks to BlueZ over D-Bus (dbus-fast, no other dependencies) and speaks the
-WalkingPad "FE00" protocol used by the A1/R1/R1 Pro/C1 family.
+Talks to BlueZ over D-Bus with python-gobject (part of every Omarchy install)
+and speaks the WalkingPad "FE00" protocol used by the A1/R1/R1 Pro/C1/C2 family.
 
 stdin  — one command per line:
     start | stop | speed <km/h> | faster | slower | mode <manual|auto|standby>
@@ -20,17 +20,21 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 try:
-    from dbus_fast import BusType, Message, MessageType, Variant
-    from dbus_fast.aio import MessageBus
-except ImportError:
-    # Not part of a base Omarchy install. Tell the shell once, then idle until
-    # it hangs up, so the widget shows the fix instead of respawning us forever.
+    import gi
+
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+except (ImportError, ValueError):
+    # Ships with Omarchy, so this only happens on a stripped-down system. Tell
+    # the shell once, then idle until it hangs up, so the widget shows the fix
+    # instead of respawning us forever.
     print(json.dumps({
         "connection": "missing-deps",
-        "error": "Install python-dbus-fast: omarchy pkg add python-dbus-fast",
+        "error": "The python-gobject package is missing. It ships with Omarchy; reinstall it to use this plugin.",
         "status": None,
     }), flush=True)
     for _ in sys.stdin:
@@ -192,6 +196,7 @@ class Bridge:
         self.address = (address or saved.get("address") or "").upper()
         self.name = saved.get("name", "")
         self.bus = None
+        self.loop = None
         self.adapter = None
         self.device_path = None
         self.write_path = None
@@ -235,20 +240,23 @@ class Bridge:
 
     # D-Bus helpers -----------------------------------------------------------
 
-    async def call(self, path, interface, member, signature="", body=None, timeout=None):
-        msg = Message(
-            destination=BLUEZ,
-            path=path,
-            interface=interface,
-            member=member,
-            signature=signature,
-            body=body or [],
-        )
-        coro = self.bus.call(msg)
-        reply = await (asyncio.wait_for(coro, timeout) if timeout else coro)
-        if reply.message_type == MessageType.ERROR:
-            raise RuntimeError(f"{reply.error_name}: {reply.body[0] if reply.body else ''}")
-        return reply.body
+    async def call(self, path, interface, member, params=None, timeout=25):
+        """One BlueZ method call, run in a worker thread so a slow Connect
+        never blocks stats or commands. Returns the reply unpacked to plain
+        Python values."""
+
+        def blocking():
+            try:
+                reply = self.bus.call_sync(
+                    BLUEZ, path, interface, member, params, None,
+                    Gio.DBusCallFlags.NONE, int(timeout * 1000), None,
+                )
+            except GLib.Error as e:
+                # e.g. "GDBus.Error:org.bluez.Error.InProgress: In Progress"
+                raise RuntimeError(e.message.removeprefix("GDBus.Error:")) from None
+            return reply.unpack() if reply is not None else ()
+
+        return await asyncio.get_running_loop().run_in_executor(None, blocking)
 
     async def objects(self):
         (objs,) = await self.call("/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
@@ -256,14 +264,14 @@ class Bridge:
 
     async def prop(self, path, interface, name):
         (v,) = await self.call(
-            path, "org.freedesktop.DBus.Properties", "Get", "ss", [interface, name]
+            path, "org.freedesktop.DBus.Properties", "Get", GLib.Variant("(ss)", (interface, name))
         )
-        return v.value
+        return v
 
     async def find_adapter(self):
         for path, ifaces in (await self.objects()).items():
             if "org.bluez.Adapter1" in ifaces:
-                if ifaces["org.bluez.Adapter1"]["Powered"].value:
+                if ifaces["org.bluez.Adapter1"].get("Powered"):
                     return path
         return None
 
@@ -271,11 +279,11 @@ class Bridge:
         dev = ifaces.get("org.bluez.Device1")
         if not dev or not path.startswith(self.adapter + "/"):
             return False
-        addr = dev["Address"].value.upper()
+        addr = dev.get("Address", "").upper()
         if self.address:
             return addr == self.address
-        uuids = dev["UUIDs"].value if "UUIDs" in dev else []
-        name = dev["Name"].value if "Name" in dev else ""
+        uuids = dev.get("UUIDs", [])
+        name = dev.get("Name", "")
         return SERVICE_UUID in uuids or bool(NAME_RE.search(name))
 
     async def find_device(self):
@@ -292,8 +300,7 @@ class Bridge:
                 self.adapter,
                 "org.bluez.Adapter1",
                 "SetDiscoveryFilter",
-                "a{sv}",
-                [{"Transport": Variant("s", "le")}],
+                GLib.Variant("(a{sv})", ({"Transport": GLib.Variant("s", "le")},)),
             )
         except RuntimeError as e:
             log("discovery filter:", e)
@@ -339,8 +346,8 @@ class Bridge:
             return False
 
         self.device_path = path
-        self.address = dev["Address"].value.upper()
-        self.name = dev["Name"].value if "Name" in dev else self.name or "WalkingPad"
+        self.address = dev["Address"].upper()
+        self.name = dev.get("Name") or self.name or "WalkingPad"
         write_json(DEVICE_FILE, {"address": self.address, "name": self.name})
 
         self.set_connection("connecting")
@@ -359,7 +366,7 @@ class Bridge:
             ch = ifaces.get("org.bluez.GattCharacteristic1")
             if not ch or not p.startswith(path + "/"):
                 continue
-            uuid = ch["UUID"].value.lower()
+            uuid = ch["UUID"].lower()
             if uuid == WRITE_UUID:
                 self.write_path = p
             elif uuid == NOTIFY_UUID:
@@ -379,13 +386,15 @@ class Bridge:
                 log("disconnect:", e)
         self.set_connection("idle")
 
-    def on_signal(self, msg):
-        if msg.message_type != MessageType.SIGNAL or msg.member != "PropertiesChanged":
-            return
-        iface, changed = msg.body[0], msg.body[1]
-        if iface == "org.bluez.GattCharacteristic1" and msg.path == self.notify_path:
+    def on_glib_signal(self, _conn, _sender, path, _iface, _member, params, _data):
+        # Runs on the GLib thread; hop over to the asyncio loop.
+        iface, changed, _invalidated = params.unpack()
+        self.loop.call_soon_threadsafe(self.on_properties_changed, path, iface, changed)
+
+    def on_properties_changed(self, path, iface, changed):
+        if iface == "org.bluez.GattCharacteristic1" and path == self.notify_path:
             if "Value" in changed:
-                data = bytes(changed["Value"].value)
+                data = bytes(changed["Value"])
                 log("<-", data.hex(" "))
                 st = parse_status(data)
                 if st:
@@ -397,8 +406,8 @@ class Bridge:
                     self.status = st
                     self.history.update(st)
                     self.emit()
-        elif iface == "org.bluez.Device1" and msg.path == self.device_path:
-            if "Connected" in changed and not changed["Connected"].value:
+        elif iface == "org.bluez.Device1" and path == self.device_path:
+            if "Connected" in changed and not changed["Connected"]:
                 log("device dropped")
                 if self.connection == "connected":
                     self.set_connection("disconnected", "Connection lost")
@@ -410,8 +419,9 @@ class Bridge:
             self.write_path,
             "org.bluez.GattCharacteristic1",
             "WriteValue",
-            "aya{sv}",
-            [data, {}],
+            # A list, not bytes: PyGObject treats bytes as a C string and
+            # would cut every frame off at its first zero byte.
+            GLib.Variant("(aya{sv})", (list(data), {})),
             timeout=5,
         )
 
@@ -545,11 +555,15 @@ class Bridge:
             await self.queue.put(line.decode(errors="replace"))
 
     async def run(self, limits):
-        self.bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        self.bus.add_message_handler(self.on_signal)
-        await self.call_bus_match(
-            "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'"
+        self.loop = asyncio.get_running_loop()
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        self.bus.signal_subscribe(
+            BLUEZ, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+            None, None, Gio.DBusSignalFlags.NONE, self.on_glib_signal, None,
         )
+        # Signal callbacks are dispatched by the default GLib main context, so
+        # something has to iterate it; asyncio owns this thread.
+        threading.Thread(target=GLib.MainLoop().run, daemon=True).start()
         self.emit()
         tasks = [
             asyncio.create_task(self.connection_loop()),
@@ -567,18 +581,6 @@ class Bridge:
             # Leave the pad free for the phone app once the shell lets go.
             if self.connection == "connected":
                 await self.disconnect()
-
-    async def call_bus_match(self, rule):
-        await self.bus.call(
-            Message(
-                destination="org.freedesktop.DBus",
-                path="/org/freedesktop/DBus",
-                interface="org.freedesktop.DBus",
-                member="AddMatch",
-                signature="s",
-                body=[rule],
-            )
-        )
 
 
 def main():

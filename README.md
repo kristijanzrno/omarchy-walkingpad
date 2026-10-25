@@ -34,16 +34,12 @@ saying whether it worked.
 ## Requirements
 
 - Omarchy with the omarchy-shell bar
-- A Bluetooth adapter that's switched on (BlueZ is part of every Omarchy install)
-- `python-dbus-fast`, which isn't part of a base Omarchy install:
+- A Bluetooth adapter that's switched on
 
-  ```bash
-  omarchy pkg add python-dbus-fast
-  ```
-
-  Without it, the popup shows "Setup needed" with this command. The bridge runs
-  with `/usr/bin/python3` on purpose, so a mise or pyenv Python on your `PATH`
-  doesn't hide the system package.
+Nothing else to install. The Bluetooth bridge uses the system Python with
+`python-gobject` and BlueZ, both part of every Omarchy install. It runs with
+`/usr/bin/python3` on purpose, so a mise or pyenv Python on your `PATH` doesn't
+get in the way.
 
 No pairing is needed. On first run the plugin scans for the pad, then
 remembers its address. Nothing runs as root, and no packages or services are
@@ -52,7 +48,6 @@ installed for you: the bridge is a child process of the shell and exits with it.
 ## Install
 
 ```bash
-omarchy pkg add python-dbus-fast
 omarchy plugin add https://github.com/kristijanzrno/omarchy-walkingpad.git --enable
 ```
 
@@ -68,8 +63,19 @@ omarchy plugin remove io.github.kristijanzrno.walkingpad
 This disables the widget, disconnects from the pad and deletes the plugin.
 Your saved pad and step history are kept in
 `~/.local/state/omarchy-walkingpad/` so a reinstall picks them up. Delete that
-folder if you want them gone. Remove `python-dbus-fast` too if nothing else uses
-it (`omarchy pkg drop python-dbus-fast`).
+folder if you want them gone.
+
+## Update
+
+```bash
+omarchy plugin update io.github.kristijanzrno.walkingpad
+omarchy-shell walkingpad restart
+```
+
+The Bluetooth service is kept loaded, so a plugin reload never drops your
+connection mid-walk. The second command restarts just the bridge so it picks up
+the new version. If an update changes the service itself, the release notes will
+say to run `omarchy restart shell` instead.
 
 ## Using it
 
@@ -105,6 +111,7 @@ omarchy-shell walkingpad speed 3.5
 omarchy-shell walkingpad mode auto    # manual | auto | standby
 omarchy-shell walkingpad connect
 omarchy-shell walkingpad disconnect
+omarchy-shell walkingpad restart      # restart the Bluetooth bridge
 omarchy-shell walkingpad status       # JSON
 omarchy-shell io.github.kristijanzrno.walkingpad toggle  # open / close the popup
 ```
@@ -136,7 +143,7 @@ Set these in the bar widget's settings, or on its entry in
 Panel.qml (one per bar) ──reads──▶ Service.qml (one per shell)
                                       │ stdin: commands  ▲ stdout: JSON state
                                       ▼                  │
-                                   walkingpad.py ── D-Bus ── BlueZ ── BLE ── pad
+                                   walkingpad.py ── D-Bus (python-gobject) ── BlueZ ── BLE ── pad
 ```
 
 `walkingpad.py` connects through BlueZ, subscribes to characteristic `FE01`,

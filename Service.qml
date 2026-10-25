@@ -21,8 +21,8 @@ Item {
   }
 
   readonly property string scriptPath: Qt.resolvedUrl("walkingpad.py").toString().replace(/^file:\/\//, "")
-  // System Python, not whatever mise/pyenv puts first on PATH: dbus-fast comes
-  // from the python-dbus-fast package.
+  // System Python, not whatever mise/pyenv puts first on PATH: the bridge
+  // needs the system's python-gobject.
   readonly property string python: "/usr/bin/python3"
 
   readonly property real minSpeed: 0.5
@@ -170,6 +170,9 @@ Item {
     function speed(kmh: string): string { root.setSpeed(Number(kmh)); return "ok" }
     function mode(name: string): string { root.setMode(name); return "ok" }
     function connect(): string { root.connect(); return "ok" }
+    // The service is keepLoaded, so plugin reloads don't touch it; this picks
+    // up a new walkingpad.py (e.g. after `omarchy plugin update`).
+    function restart(): string { root.send("quit"); respawn.restart(); return "ok" }
     function disconnect(): string { root.disconnect(); return "ok" }
     function status(): string {
       return JSON.stringify({ connection: root.connection, device: root.deviceName, status: root.status, today: root.today })
