@@ -58,6 +58,7 @@ Item {
     if (connection === "scanning") return "Searching for WalkingPad…"
     if (connection === "connecting") return "Connecting…"
     if (connection === "no-adapter") return "Bluetooth is off"
+    if (connection === "missing-deps") return "Setup needed"
     if (!connected) return error !== "" ? "Disconnected" : "Not connected"
     if (!status) return "Connected"
     if (running) return "Walking · " + mode

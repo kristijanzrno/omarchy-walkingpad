@@ -22,8 +22,20 @@ import re
 import sys
 import time
 
-from dbus_fast import BusType, Message, MessageType, Variant
-from dbus_fast.aio import MessageBus
+try:
+    from dbus_fast import BusType, Message, MessageType, Variant
+    from dbus_fast.aio import MessageBus
+except ImportError:
+    # Not part of a base Omarchy install. Tell the shell once, then idle until
+    # it hangs up, so the widget shows the fix instead of respawning us forever.
+    print(json.dumps({
+        "connection": "missing-deps",
+        "error": "Install python-dbus-fast: omarchy pkg add python-dbus-fast",
+        "status": None,
+    }), flush=True)
+    for _ in sys.stdin:
+        pass
+    sys.exit(0)
 
 BLUEZ = "org.bluez"
 SERVICE_UUID = "0000fe00-0000-1000-8000-00805f9b34fb"

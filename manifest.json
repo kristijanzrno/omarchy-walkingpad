@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.kristijanzrno.walkingpad",
   "name": "WalkingPad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "kristijanzrno",
   "license": "MIT",
-  "description": "Control a KingSmith WalkingPad (R1 Pro, A1, C1…) over Bluetooth from the Omarchy bar: start, stop, speed, mode, and daily step totals. Tested on the R1 Pro.",
+  "description": "Control a KingSmith WalkingPad treadmill over Bluetooth from the Omarchy bar: start/stop, speed, Manual/Auto/Standby mode, keybindings and daily steps. Tested on the R1 Pro; should work on A1, A1 Pro, R1, C1 and C2. Requires python-dbus-fast.",
   "kinds": [
     "service",
     "bar-widget"
@@ -17,7 +17,7 @@
   "barWidget": {
     "displayName": "WalkingPad",
     "description": "Start and stop your WalkingPad, change speed and mode, and see session and daily totals.",
-    "category": "Fitness",
+    "category": "Hardware",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
